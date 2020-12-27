@@ -1,0 +1,10 @@
+_discard
+_ignore*
+.vscode
+core/config/alt-reference.json
+core/functions/Restore-TaniumTestLab.ps1
+jobqueue/decommissioned/*.json
+logs/deploymentautomation.log
+*.txt
+*.log
+*-*-*-*-*-*.json
