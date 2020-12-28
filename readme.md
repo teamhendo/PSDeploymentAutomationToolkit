@@ -11,7 +11,7 @@ The PowerShell Deployment Automation Toolkit provides a way to deliver automated
 
 ### __Features__
 
-This script manages the management and deployment of Software Gallery packages for the Tanium Endpoint Management platform. The tool currently provides the following functionality:
+This script manages the import and deployment of Software Gallery packages for the Tanium Endpoint Management platform. The tool currently provides the following functionality:
 
 * Automated API session creation mechanism with manual fallback
 * Catalog-driven for ease of customization
@@ -64,7 +64,7 @@ Example 1: The ConvertFrom-SecureString cmdlet converts a secure string into an 
 
 Parameters|Description
 --------------|--------------
-DecommOnCompletion| Designates whether or not jobs should be decommissioned once all rings are deployed; defaults to $true.
+DecommOnCompletion| Designates whether or not jobs should be decommissioned once all rings are deployed; defaults to $true. If set to $false, jobs will remain in the root/jobqueue/ directory and no subsequent jobs for that software will proceed until the job is manually copied to the root/jobqueue/decommissioned/ directory.
 Environment| Designates the operating environment for the script to execute upon.  Jobs from multiple environments can coexist so back-to-back executions from multiple environments will function appropriately.
 QuickTest| Designates whether or not an abbreviated run should be facilitated; defaults to $false as a precaution.
 StartToday| Designates whether or not the startDateOffsetInDays value in catalog items will offset relative to the runtime date or the next Patch Tuesday; defaults to $false.
