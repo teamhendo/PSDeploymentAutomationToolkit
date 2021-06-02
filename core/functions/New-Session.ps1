@@ -1,22 +1,22 @@
 function New-Session {
-[CmdletBinding()]
-param (
-[Parameter(Mandatory=$true, 
-                ValueFromPipeline=$true,
-                Position=0)]
-[ValidateNotNull()]
-[ValidateNotNullOrEmpty()]
-$scriptDirectory,
-[Parameter(Mandatory=$true, 
-                ValueFromPipeline=$true,
-                Position=1)]
-[ValidateNotNull()]
-[ValidateNotNullOrEmpty()]
-$reference    
-)
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true, 
+        ValueFromPipeline=$true,
+        Position=0)]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        $scriptDirectory,
+        [Parameter(Mandatory=$true, 
+        ValueFromPipeline=$true,
+        Position=1)]
+        [ValidateNotNull()]
+        [ValidateNotNullOrEmpty()]
+        $reference    
+    )
 
-#Requires -Modules TanREST
-#Requires -Version 3.0
+    #Requires -Modules TanREST
+    #Requires -Version 3.0
 
     try {
         $sessionObject = New-TaniumWebSession -credential $credentialObject -ServerURI $reference.taniumServer -ErrorAction Stop
