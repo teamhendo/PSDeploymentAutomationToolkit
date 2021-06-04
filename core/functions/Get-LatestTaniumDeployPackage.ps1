@@ -20,11 +20,12 @@ function Get-LatestTaniumDeployPackage {
 	)
     
      Begin {
-          $comparisonPackage =     $TaniumDeployPackages | 
+          $comparisonPackage =    $TaniumDeployPackages | 
                                    Where-Object { 
                                    $_.productVendor -eq $ProductVendor -and 
                                    $_.productName -eq $ProductName -and 
                                    $_.platform -eq $Platform} | 
+                                   Tee-Object -Variable previousPackage |
                                    Sort-Object -Property productVersion -Descending | 
                                    Select-Object -First 1
 
@@ -34,34 +35,51 @@ function Get-LatestTaniumDeployPackage {
                                    $_.productName -eq $ProductName -and 
                                    $_.platform -eq $Platform} | 
                                    Sort-Object -Property productVersion -Descending | 
-                                   Select-Object -First 1         
+                                   Select-Object -First 1
+                                   
+          $previousPackage =       $previousPackage | 
+                                   Sort-Object -Property productVersion -Descending |
+                                   Select-Object -Skip 1 |
+                                   Select-Object -First 1                                   
      }
 
      Process {
           if ($comparisonPackage.productVersion -ne $latestGalleryPackage.productVersion) {
                if ($comparisonPackage.productVersion -gt $latestGalleryPackage.productVersion) {
                     $latestPackage = [PSCustomObject]@{
-                         importRequired      = $false
-                         name                = "$($comparisonPackage.productVendor ) $($comparisonPackage.productName) $($comparisonPackage.productVersion)"
-                         packageEditId       = $($comparisonPackage.currentSoftwarePackageEditId)
-                         packageId           = $($comparisonPackage.id)                         
+                         contentCached                = $comparisonPackage.allFilesCachedOnTaniumServer
+                         currentSoftwarePackageEditId = $comparisonPackage.currentSoftwarePackageEditId
+                         importRequired               = $false
+                         name                         = "$($comparisonPackage.productVendor) $($comparisonPackage.productName) $($comparisonPackage.productVersion)"
+                         previousSoftwarePackageId    = $previousPackage.id
+                         previousVersion              = $previousPackage.productVersion
+                         productVersion               = $comparisonPackage.productVersion
+                         softwarePackageId            = $comparisonPackage.id
                     }
                }
                else {
                     $latestPackage = [PSCustomObject]@{
-                         importRequired      = $true
-                         name                = "$($latestGalleryPackage.productVendor ) $($latestGalleryPackage.productName) $($latestGalleryPackage.productVersion)"
-                         packageEditId       = $null
-                         packageId           = $($latestGalleryPackage.id)
+                         contentCached                = $latestGalleryPackage.allFilesCachedOnTaniumServer
+                         currentSoftwarePackageEditId = $latestGalleryPackage.currentSoftwarePackageEditId
+                         importRequired               = $true
+                         name                         = "$($latestGalleryPackage.productVendor) $($latestGalleryPackage.productName) $($latestGalleryPackage.productVersion)"
+                         previousSoftwarePackageId    = $comparisonPackage.id
+                         previousVersion              = $comparisonPackage.productVersion
+                         productVersion               = $latestGalleryPackage.productVersion
+                         softwarePackageId            = $latestGalleryPackage.id
                     }
                }
           }
           else {
                $latestPackage = [PSCustomObject]@{
-                    importRequired      = $false
-                    name                = "$($comparisonPackage.productVendor ) $($comparisonPackage.productName) $($comparisonPackage.productVersion)"
-                    packageEditId       = $($comparisonPackage.currentSoftwarePackageEditId)
-                    packageId           = $($comparisonPackage.id)
+                    contentCached                = $comparisonPackage.allFilesCachedOnTaniumServer
+                    currentSoftwarePackageEditId = $comparisonPackage.currentSoftwarePackageEditId
+                    importRequired               = $false
+                    name                         = "$($comparisonPackage.productVendor) $($comparisonPackage.productName) $($comparisonPackage.productVersion)"
+                    previousSoftwarePackageId    = $previousPackage.id
+                    previousVersion              = $previousPackage.productVersion
+                    productVersion               = $comparisonPackage.productVersion
+                    softwarePackageId            = $comparisonPackage.id
                }
           }          
      }

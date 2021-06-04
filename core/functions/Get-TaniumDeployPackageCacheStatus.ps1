@@ -26,13 +26,13 @@ param (
                     if ($x -lt 1) 
                     {
                          Write-Log -Component "Get-TaniumDeployPackageCacheStatus" `
-                         -LogFile $scriptLogFile `
-                         -Type 1 `
-                         -Message (-join ('Validating Package Cache Status: ',
-                         "$($taniumImportPackage.productVendor)",' ',
-                         "$($taniumImportPackage.productName)",' ',`
-                         "$($taniumImportPackage.productVersion)",'',
-                         "$($taniumImportPackage.architecture)")) 
+                                   -LogFile $scriptLogFile `
+                                   -Type 1 `
+                                   -Message (-join ('Validating Package Cache Status: ',
+                                   "$($taniumImportPackage.productVendor)",' ',
+                                   "$($taniumImportPackage.productName)",' ',`
+                                   "$($taniumImportPackage.productVersion)",'',
+                                   "$($taniumImportPackage.architecture)")) 
                     }
 
                     $taniumImportPackage = Get-TaniumDeployPackage -ID $taniumImportPackage.id
@@ -45,23 +45,41 @@ param (
 
                if ($taniumImportPackage.allFilesCachedOnTaniumServer -eq $true){
                     Write-Log -Component "Get-TaniumDeployPackageCacheStatus" `
-                    -Type 1 `
-                    -LogFile $scriptLogFile `
-                    -Message (-join ('Package Cache Validated: ',
-                    "$($taniumImportPackage.productVendor)",' ',
-                    "$($taniumImportPackage.productName)",' ',`
-                    "$($taniumImportPackage.productVersion)",'',
-                    "$($taniumImportPackage.architecture)")) 
+                              -Type 1 `
+                              -LogFile $scriptLogFile `
+                              -Message (-join ('Package Cache Validated: ',
+                              "$($taniumImportPackage.productVendor)",' ',
+                              "$($taniumImportPackage.productName)",' ',`
+                              "$($taniumImportPackage.productVersion)",'',
+                              "$($taniumImportPackage.architecture)")) 
+
+                    Write-Log -Component "DeploymentAutomationToolkit" `
+                              -Type 1 `
+                              -LogFile $scriptLogFile `
+                              -Message (-join ( 'Successfully Imported: ',
+                              "$($cacheValidationObject.productVendor)",' ',
+                              "$($cacheValidationObject.productName)",' ',
+                              "$($cacheValidationObject.productVersion)",'',
+                              "$($cacheValidationObject.architecture)"))
                }
                else {
                     Write-Log -Component "Get-TaniumDeployPackageCacheStatus" `
-                    -Type 1 `
-                    -LogFile $scriptLogFile `
-                    -Message (-join ('Package Cache Error: ',
-                    "$($taniumImportPackage.productVendor)",' ',
-                    "$($taniumImportPackage.productName)",' ',`
-                    "$($taniumImportPackage.productVersion)",'',
-                    "$($taniumImportPackage.architecture)"))
+                              -Type 1 `
+                              -LogFile $scriptLogFile `
+                              -Message (-join ('Package Cache Error: ',
+                              "$($taniumImportPackage.productVendor)",' ',
+                              "$($taniumImportPackage.productName)",' ',`
+                              "$($taniumImportPackage.productVersion)",'',
+                              "$($taniumImportPackage.architecture)"))
+
+                    Write-Log -Component "DeploymentAutomationToolkit" `
+                              -Type 1 `
+                              -LogFile $scriptLogFile `
+                              -Message (-join ( 'Import Failure: ',
+                              "$($cacheValidationObject.productVendor)",' ',
+                              "$($cacheValidationObject.productName)",' ',
+                              "$($cacheValidationObject.productVersion)",'',
+                              "$($cacheValidationObject.architecture)"))
                }
           }
           catch [System.Net.WebException]
@@ -72,24 +90,24 @@ param (
                          $errorMessage = $Error[0].ErrorDetails.Message | Out-String | ConvertFrom-Json
 
                          Write-Log -Component "Get-TaniumDeployPackageCacheStatus" `
-                         -LogFile ($scriptLogFile) `
-                         -Type 1 `
-                         -Message "$($($errorMessage.errors.description).replace('"',''))."
+                                   -LogFile ($scriptLogFile) `
+                                   -Type 1 `
+                                   -Message "$($($errorMessage.errors.description).replace('"',''))."
 
                          Remove-Variable errorMessage
                     }
                     {$_ -like "*Unable to find Software Package*"} {
                          Write-Log -Component "Get-TaniumDeployPackageCacheStatus" `
-                         -LogFile ($scriptLogFile) `
-                         -Type 1 `
-                         -Message "$($($errorMessage.errors.description).replace('"',''))."
+                                   -LogFile ($scriptLogFile) `
+                                   -Type 1 `
+                                   -Message "$($($errorMessage.errors.description).replace('"',''))."
                     }
                     Default 
                     {
                          Write-Log -Component "Get-TaniumDeployPackageCacheStatus" `
-                         -LogFile ($scriptLogFile) `
-                         -Type 1 `
-                         -Message "$($Error[0].ErrorDetails.Message)"
+                                   -LogFile ($scriptLogFile) `
+                                   -Type 1 `
+                                   -Message "$($Error[0].ErrorDetails.Message)"
                     }
                }
           }
