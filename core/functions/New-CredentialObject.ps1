@@ -1,21 +1,21 @@
 function New-CredentialObject {
-[CmdletBinding()]
-param (
-[Parameter(Mandatory=$true, 
-ValueFromPipeline=$true,
-Position=0)]
-[ValidateNotNull()]
-[ValidateNotNullOrEmpty()]
-$ScriptDirectory,
-[Parameter(Mandatory=$true, 
-ValueFromPipeline=$true,
-Position=1)]
-[ValidateNotNull()]
-[ValidateNotNullOrEmpty()]
-$Reference    
-)
+	[CmdletBinding()]
+	param (
+		[Parameter(Mandatory=$true, 
+		ValueFromPipeline=$true,
+		Position=0)]
+		[ValidateNotNull()]
+		[ValidateNotNullOrEmpty()]
+		$ScriptDirectory,
+		[Parameter(Mandatory=$true, 
+		ValueFromPipeline=$true,
+		Position=1)]
+		[ValidateNotNull()]
+		[ValidateNotNullOrEmpty()]
+		$Reference    
+	)
 
-#Requires -Version 3.0
+	#Requires -Version 3.0
 
 	try 
 	{

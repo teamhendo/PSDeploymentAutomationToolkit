@@ -2,22 +2,29 @@
 .SYNOPSIS
 	The PowerShell Deployment Automation Toolkit provides a way to deliver automated deployments through the Tanium Endpoint Management platform.
 	# LICENSE #
-	Copyright (C) 2020 - Brent Henderson
+	Copyright (C) 2020-2021 - Brent Henderson
 	This program is free software: you can redistribute it and/or modify it under the terms of the GNU Lesser General Public License as published by the Free Software Foundation, either version 3 of the License, or any later version. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details. 
 	You should have received a copy of the GNU Lesser General Public License along with this program. If not, see <http://www.gnu.org/licenses/>.
 #>
 
 [CmdletBinding()]
 Param (
-	[ValidateSet("true","false")]
-    $DecommOnCompletion = [bool]$true,
+	[Parameter(Mandatory=$false)]
+    [pscredential] $CredentialObject,
+    
+    [Parameter(Mandatory=$false)]
+    [ValidateSet("true","false")]
+    [boolean] $DecommOnCompletion = $true,
+    
     [Parameter(Mandatory=$false)]
 	[ValidateSet('Alt','DEV','QA','PROD')]
-    $Environment = [string]'Alt',
+    [string] $Environment = 'Alt',
+    
     [ValidateSet("true","false")]
-    $QuickTest = [bool]$false,
+    $StartToday = [bool]$false,
+
     [ValidateSet("true","false")]
-    $StartToday = [bool]$false   
+    [boolean] $QuickTest = $false
 )
 
 ##*===============================================
@@ -34,14 +41,14 @@ $scriptDirectory = [string]$($(Split-Path -Path $($InvocationInfo.MyCommand.Defi
 ##*=============================================
 
 ## Variables: Script Info
-[version]$depAutoMainScriptVersion = [version]'0.0.1'
-[string]$depAutoMainScriptDate = '12/28/2020'
+[version]$depAutoMainScriptVersion = [version]'0.5.1'
 
 ## Variables: Datetime and Culture
 [datetime]$currentDateTime = Get-Date
 [string]$currentDate = Get-Date -Date $currentDateTime -UFormat '%Y-%m-%d'
 
 ## Variables: Miscellaneous Runtime Dependencies
+[System.Collections.ArrayList]$jobFailures = @()
 [System.Collections.ArrayList]$galleryCatalog = @()
 [System.Collections.ArrayList]$jobHandler = @()
 [string]$scriptLogFile = $(-join ($scriptDirectory,'/logs/deploymentautomation.log'))
@@ -60,117 +67,141 @@ if (Test-Path "$scriptDirectory/core/functions/")
     {
         Get-ItemProperty -Path "$scriptDirectory/core/functions/*" -Include "*.ps1" | Select-Object -ExpandProperty FullName | ForEach-Object {. $_}
         
-        Write-Log -Message "*******************************************************************************" -Component "Core Initialization" -Type 1 -LogFile $scriptLogFile
+        Write-Log   -Component "Core Initialization" `
+                    -Type 1 `
+                    -LogFile $scriptLogFile `
+                    -Message "*******************************************************************************" 
         
-        Write-Log -Message "*******************************************************************************" -Component "Core Initialization" -Type 1 -LogFile $scriptLogFile
-        
-        Write-Log -Message "Working directory is [$scriptDirectory]" -Component "Core Initialization" -Type 1 -LogFile $scriptLogFile
-        
-        Write-Log -Message 'Operating Platform - Tanium' -Component "Core Initialization" -Type 1 -LogFile $scriptLogFile
-        
-        Write-Log -Message (-join ('Operating Environment - ',$($Environment))) -Component "Core Initialization" -Type 1 -LogFile $scriptLogFile
+        Write-Log   -Component "Core Initialization" `
+                    -Type 1 `
+                    -LogFile $scriptLogFile `
+                    -Message "*******************************************************************************" 
 
-        Write-Log -Message (-join ('Quick Test Utilized - ',$($QuickTest))) -Component "Core Initialization" -Type 1 -LogFile $scriptLogFile
+        Write-Log   -Component "Core Initialization" `
+                    -Type 1 `
+                    -LogFile $scriptLogFile `
+                    -Message "Deployment Automation Toolkit Version: [$depAutoMainScriptVersion]"
+
+        Write-Log   -Component "Core Initialization" `
+                    -Type 1 `
+                    -LogFile $scriptLogFile `
+                    -Message "Working directory is [$scriptDirectory]" 
+
+        Write-Log   -Component "Core Initialization" `
+                    -Type 1 `
+                    -LogFile $scriptLogFile `
+                    -Message "Operating Platform - Tanium" 
+
+        Write-Log   -Component "Core Initialization" `
+                    -Type 1 `
+                    -LogFile $scriptLogFile `
+                    -Message (-join ('Operating Environment - ',$($Environment)))
+
+        Write-Log   -Component "Core Initialization" `
+                    -Type 1 `
+                    -LogFile $scriptLogFile `
+                    -Message (-join ('Quick Test Utilized - ',$($QuickTest)))
         
-        Get-ItemProperty -Path "$scriptDirectory/core/functions/*" -Include "*.ps1" | Select-Object -ExpandProperty Name | ForEach-Object {Write-Log -Message "Importing Function: $_ from $scriptDirectory/core/dependencies" -Component "Core Initialization" -Type 1 -LogFile $scriptLogFile }
+        Get-ItemProperty    -Path "$scriptDirectory/core/functions/*" `
+                            -Include "*.ps1" | `
+                            Select-Object -ExpandProperty Name | `
+                            ForEach-Object `
+                            { Write-Log -Component "Core Initialization" `
+                                        -Type 1 `
+                                        -LogFile $scriptLogFile `
+                                        -Message "Importing Function: $_ from $scriptDirectory/core/dependencies"
+                            }
     }
-    catch {}		    
+    catch 
+    {
+        Write-Log   -Component "Core Initialization" `
+                    -Type 1 `
+                    -LogFile $scriptLogFile `
+                    -Message "Uncaught exception. $($Error[0]) - Exiting."
+    }		    
 }
 else 
 {
-    Write-Log -Message "Error:  The functions directory is missing or inaccessible: `n$($_.Exception.Message)`n `n$($_.InvocationInfo.PositionMessage)" -Component "Core Initialization" -Type 3  -LogFile $scriptLogFile
+    Write-Log   -Component "Core Initialization" `
+                -Type 3  `
+                -LogFile $scriptLogFile `
+                -Message "Error:  The functions directory is missing or inaccessible: " +
+                         "`n$($_.Exception.Message)`n `n$($_.InvocationInfo.PositionMessage)" 
         
     ## Exit the script, returning the exit code
     
     if (Test-Path -LiteralPath 'variable:HostInvocation') { $script:ExitCode = $mainExitCode; Exit } else { Exit $mainExitCode }
 }
 
+try 
+{
+    $reference = Get-Content "$scriptDirectory/core/config/config.json" -Raw | Out-String | ConvertFrom-Json
+}
+catch [System.Management.Automation.ItemNotFoundException] 
+{
+    Write-Log -Message "dev-reference.json not found in $scriptDirectory/core/config/. Exiting." -Component "Core Initialization" -Type 3  -LogFile $scriptLogFile
+    
+    exit
+}
+
 switch ($Environment) 
 {
     Alt 
     {
-        try
+        $reference = $reference.envConfig.altEnvironment
+
+        if ($null -eq $reference)
         {
-            $reference = Get-Content "$scriptDirectory/core/config/alt-reference.json" -Raw -ErrorAction Stop | Out-String | ConvertFrom-Json
-        }
-        catch [System.Management.Automation.ItemNotFoundException]
-        {
-            Write-Log -Message "alt-reference.json not found in $scriptDirectory/core/config/. Exiting." -Component "Core Initialization" -Type 3  -LogFile $scriptLogFile
+            Write-Log   -Component "Core Initialization" `
+                        -Type 3 `
+                        -LogFile $scriptLogFile `
+                        -Message "Please validate the altEnvironment settings under $scriptDirectory/core/config/config.json. Exiting." 
             
             exit
         }
-        catch [System.Net.WebException],[System.Exception]
-        {
-            $errorMessage = $error[0].Exception.Message
-            
-            Write-Log -Message "Unhandled exception encountered. Exiting." -Component "Core Initialization" -Type 3  -LogFile $scriptLogFile
-            
-            exit
-        }                
     }
     DEV 
     { 
-        try
+        $reference = $reference.envConfig.devEnvironment
+
+        if ($null -eq $reference)
         {
-            $reference = Get-Content "$scriptDirectory/core/config/dev-reference.json" -Raw | Out-String | ConvertFrom-Json
-        }
-        catch [System.Management.Automation.ItemNotFoundException]
-        {
-            Write-Log -Message "dev-reference.json not found in $scriptDirectory/core/config/. Exiting." -Component "Core Initialization" -Type 3  -LogFile $scriptLogFile
+            Write-Log   -Component "Core Initialization" `
+                        -Type 3 `
+                        -LogFile $scriptLogFile `
+                        -Message "Please validate the devEnvironment settings under $scriptDirectory/core/config/config.json. Exiting." 
             
             exit
         }
-        catch [System.Net.WebException],[System.Exception]
-        {
-            $errorMessage = $error[0].Exception.Message
-            
-            Write-Log -Message "Unhandled exception encountered. Exiting." -Component "Core Initialization" -Type 3  -LogFile $scriptLogFile
-            
-            exit
-        } 
     }
     QA 
     {
-        try
+        $reference = $reference.envConfig.qaEnvironment
+
+        if ($null -eq $reference)
         {
-            $reference = Get-Content "$scriptDirectory/core/config/qa-reference.json" -Raw | Out-String | ConvertFrom-Json
-        }
-        catch [System.Management.Automation.ItemNotFoundException]
-        {
-            Write-Log -Message "qa-reference.json not found in $scriptDirectory/core/config/. Exiting." -Component "Core Initialization" -Type 3  -LogFile $scriptLogFile
+            Write-Log   -Component "Core Initialization" `
+                        -Type 3 `
+                        -LogFile $scriptLogFile `
+                        -Message "Please validate the qaEnvironment settings under $scriptDirectory/core/config/config.json. Exiting." 
             
             exit
         }
-        catch [System.Net.WebException],[System.Exception]
-        {
-            $errorMessage = $error[0].Exception.Message
-            
-            Write-Log -Message "Unhandled exception encountered. Exiting." -Component "Core Initialization" -Type 3  -LogFile $scriptLogFile
-            
-            exit
-        } 
     }
     PROD 
     {
         
-        try
+        $reference = $reference.envConfig.prodEnvironment
+
+        if ($null -eq $reference)
         {
-            $reference = Get-Content "$scriptDirectory/core/config/prod-reference.json" -Raw | Out-String | ConvertFrom-Json
-        }
-        catch [System.Management.Automation.ItemNotFoundException]
-        {
-            Write-Log -Message "prod-reference.json not found in $scriptDirectory/core/config/. Exiting." -Component "Core Initialization" -Type 3  -LogFile $scriptLogFile
+            Write-Log   -Component "Core Initialization" `
+                        -Type 3 `
+                        -LogFile $scriptLogFile `
+                        -Message "Please validate the prodEnvironment settings under $scriptDirectory/core/config/config.json. Exiting." 
             
             exit
         }
-        catch [System.Net.WebException],[System.Exception]
-        {
-            $errorMessage = $error[0].Exception.Message
-            
-            Write-Log -Message "Unhandled exception encountered. Exiting." -Component "Core Initialization" -Type 3  -LogFile $scriptLogFile
-            
-            exit
-        } 
     }
 }
 
@@ -178,45 +209,94 @@ if ($false -eq [bool]$(Get-Command -Module TanRest))
 {
     try 
     {
-        Write-Log -Message (-join ('Tanium TanREST Module Required: Importing')) -Component "Core Initialization" -Type 1 -LogFile $scriptLogFile
+        Write-Log   -Component "Core Initialization" `
+                    -Type 1 `
+                    -LogFile $scriptLogFile `
+                    -Message (-join ('Tanium TanREST Module Required: Importing')) 
         
         Import-Module -Name TanREST
 
         if ($true -eq [bool]$(Get-Module -Name TanREST)) 
         {
-            Write-Log -Message 'TanREST Module Import Successful' -Component "Core Initialization" -Type 1 -LogFile $scriptLogFile
+            Write-Log   -Component "Core Initialization" `
+                        -Type 1 `
+                        -LogFile $scriptLogFile `
+                        -Message 'TanREST Module Import Successful' 
         }
     }
     catch 
     {
-        $errorMessage = $error[0].Exception.Message
-        
-        Write-Log -Message "TanREST module not found. Exiting." -Component "Core Initialization" -Type 3  -LogFile $scriptLogFile
+        Write-Log -Component "Core Initialization" `
+                    -Type 3 `
+                    -LogFile $scriptLogFile `
+                    -Message "TanREST module not found. Exiting." 
         
         exit
     }
 }
 
+# TODO - Need to test $credentialObject and dump out of the script if it is null.
+
 if ($false -eq [bool]$(Get-TaniumSavedWebSession -ErrorAction SilentlyContinue)) 
 {
-    $credentialObject = New-CredentialObject -ScriptDirectory $scriptDirectory -Reference $reference
-    
-    New-Session -scriptDirectory $scriptDirectory -reference $reference
+    try 
+    {
+        if (!($CredentialObject))
+        {
+            $credentialObject = New-CredentialObject    -ScriptDirectory $scriptDirectory `
+                                                        -Reference $reference `
+                                                        -ErrorVariable datNewCredentialObjectError
+        }
+    }
+    catch 
+    {
+        Write-Output -InputObject $Error[0]
+    }
+
+    try 
+    {
+        $sessionObject = New-Session    -CredentialObject $credentialObject `
+                                        -scriptDirectory $scriptDirectory `
+                                        -reference $reference `
+                                        -ErrorVariable datNewSessionError
+
+        if ($null -eq $sessionObject) 
+        {
+            Write-Log -Component "Core Initialization" `
+                    -Type 3 `
+                    -LogFile $scriptLogFile `
+                    -Message "Session could not be established.  Please validate that the $Environment configuration file settings under $scriptDirectory\core\config\config.json are correct for your environment." 
+            
+            exit
+        }
+    }
+    catch {
+        Write-Output -InputObject $Error[0]
+    }
 
     Remove-Variable -Name reference -ErrorAction SilentlyContinue
 }
             
-Write-Log -Message 'Importing Existing Tanium Deploy Packages' -Component "Core Initialization" -Type 1 -LogFile $scriptLogFile
+Write-Log   -Component "Core Initialization" `
+            -Type 1 `
+            -LogFile $scriptLogFile `
+            -Message 'Importing Existing Tanium Deploy Packages' 
 
-$taniumDeployPackages = Get-TaniumDeployPackage
+Get-TaniumDeployPackage -OutVariable taniumDeployPackages | Out-Null
 
-Write-Log -Message 'Importing Tanium Package Gallery Contents' -Component "Core Initialization" -Type 1 -LogFile $scriptLogFile
+Write-Log   -Component "Core Initialization" `
+            -Type 1 `
+            -LogFile $scriptLogFile `
+            -Message 'Importing Tanium Package Gallery Contents' 
 
-$taniumDeployGalleryCatalog = Get-TaniumDeployGalleryPackage
+Get-TaniumDeployGalleryPackage -OutVariable taniumDeployGalleryCatalog | Out-Null
 
-Write-Log -Message 'Importing Tanium Core Computer Groups' -Component "Core Initialization" -Type 1 -LogFile $scriptLogFile
+Write-Log   -Component "Core Initialization" `
+            -Type 1 `
+            -LogFile $scriptLogFile `
+            -Message 'Importing Tanium Core Computer Groups' 
 
-$taniumComputerGroups = Get-TaniumCoreComputerGroups
+Get-TaniumCoreComputerGroups -OutVariable taniumComputerGroups | Out-Null
         
 Write-Log -Message "Core initialization complete." -Component "Core Initialization" -Type 1 -LogFile $scriptLogFile
 
@@ -226,33 +306,44 @@ Write-Log -Message "Core initialization complete." -Component "Core Initializati
 
 ## Import active catalog items
 
-Get-ChildItem -Path "$scriptDirectory/core/catalog/*" -Include *.json | Select-Object -ExpandProperty FullName | ForEach-Object {$galleryCatalog.Add($_)} | Out-Null
+Get-ChildItem   -Path "$scriptDirectory/core/catalog/*" -Include *.json | `
+                Select-Object -ExpandProperty FullName | `
+                ForEach-Object {$galleryCatalog.Add($_)} | Out-Null
 
 ## Begin job queue management
 
-Write-Log -Message "Determining if there are pending jobs in the queue." -Component "Queue Manager" -Type 1 -LogFile $scriptLogFile
+Write-Log   -Component "Queue Manager" `
+            -Type 1 `
+            -LogFile $scriptLogFile `
+            -Message "Determining if there are pending jobs in the queue." 
 
 if (Test-Path "$scriptDirectory/jobqueue") 
 {
     $queuedJobs = Get-ChildItem -Path "$scriptDirectory/jobqueue/*" -Include *.json | Select-Object -ExpandProperty Fullname
     
-    if ($queuedJobs.Count -ge 1) {
+    if ($queuedJobs.Count -ge 1) 
+    {
         
-        Write-Log -Message "Jobs found in the queue:  $($queuedJobs.Count)" -Component "Queue Manager" -Type 1 -LogFile $scriptLogFile
-
+        Write-Log   -Component "Queue Manager" `
+                    -Type 1 `
+                    -LogFile $scriptLogFile `
+                    -Message "Jobs found in the queue:  $($queuedJobs.Count)"
     }
-    
-    else {
+    else 
+    {
         
-        Write-Log -Message "Jobs found in the queue:  0" -Component "Queue Manager" -Type 1 -LogFile $scriptLogFile
-
+        Write-Log   -Component "Queue Manager" `
+                    -Type 1 `
+                    -LogFile $scriptLogFile `
+                    -Message "Jobs found in the queue:  0" 
     }
 }
 else 
 {
-    Write-Log -Message "Error:  $scriptDirectory/jobqueue is missing or inaccessible." -Component "Queue Manager" -Type 3 -LogFile $scriptLogFile
-    
-    Write-Log -Message "Error:  Exiting script." -Component "Queue Manager" -Type 3 -LogFile $scriptLogFile
+    Write-Log   -Component "Queue Manager" `
+                -Type 3 `
+                -LogFile $scriptLogFile `
+                -Message "Error:  $scriptDirectory/jobqueue is missing or inaccessible.  Exiting." 
     
     exit
 }
@@ -271,9 +362,14 @@ if ($($queuedJobs).Count -ge 1)
        
         if ($($jobContent.jobStatus) -ne 'hold' -or $($jobContent.jobStatus) -ne 'complete') 
         {
-            Write-Log -Message (-join ('Job Discovered: ',"$($jobContent.productVendor)",' ',"$($jobContent.productName)",' ',`
-            
-            "$($jobContent.productVersion)",'',"$($jobContent.architecture)")) -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
+            Write-Log   -Component "Job Manager" `
+                        -Type 1 `
+                        -LogFile $scriptLogFile `
+                        -Message (-join ('Job Discovered: ',
+                        "$($jobContent.productVendor)",' ',
+                        "$($jobContent.productName)",' ',
+                        "$($jobContent.productVersion)",'',
+                        "$($jobContent.architecture)"))
             
             $jobHandler.Add($jobContent) | Out-Null
         }
@@ -281,9 +377,14 @@ if ($($queuedJobs).Count -ge 1)
         {
             if ($($jobContent.jobStatus -eq 'hold')) 
             {
-                Write-Log -Message (-join ('Job Discovered [Hold]: ',"$($jobContent.productVendor)",' ',"$($jobContent.productName)",' ',`
-                
-                "$($jobContent.productVersion)","$($jobContent.architecture)")) -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
+                Write-Log   -Component "Job Manager" `
+                            -Type 1 `
+                            -LogFile $scriptLogFile `
+                            -Message (-join ('Job Discovered [Hold]: ',
+                            "$($jobContent.productVendor)",' ',
+                            "$($jobContent.productName)",' ',
+                            "$($jobContent.productVersion)",
+                            "$($jobContent.architecture)")) 
             }
         }            
     }
@@ -298,10 +399,16 @@ foreach ($galleryCatalogEntry in $galleryCatalog)
 {
     $tempContent = Get-Content $galleryCatalogEntry -Raw | Out-String | ConvertFrom-Json
 
-    if ($jobHandler.productVendor -notcontains $tempContent.productVendor -or $jobHandler.productName -notcontains $tempContent.productName) 
+    if ($jobHandler.productVendor -notcontains $tempContent.productVendor -or `
+        $jobHandler.productName -notcontains $tempContent.productName) 
     {
-        Write-Log -Message (-join ('Job Required: ',"$($tempContent.productVendor)",' ',"$($tempContent.productName)",' ',"$($tempContent.architecture)")) `
-            -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
+        Write-Log   -Component "Job Manager" `
+                    -Type 1 `
+                    -LogFile $scriptLogFile `
+                    -Message (-join ('Job Required: ',
+                    "$($tempContent.productVendor)",' ',
+                    "$($tempContent.productName)",' ',
+                    "$($tempContent.architecture)"))
         
         $tempGUID = New-Guid | Select-Object -ExpandProperty Guid
         
@@ -309,27 +416,52 @@ foreach ($galleryCatalogEntry in $galleryCatalog)
         
         $tempContent | Add-Member -NotePropertyName jobStatus -NotePropertyValue ('downloading') -Force
         
-        $tempFileName = ('Tanium' + '-' + $environment + '-' + $($tempContent).productVendor).Replace(' ','') + '-' + $($tempContent.productName) `
-            + '-' + $($tempContent.architecture) + '-' + $tempGUID + '.json'
+        $tempFileName = ('Tanium' + '-' + `
+                        $environment + '-' + `
+                        $($tempContent).productVendor).Replace(' ','') + '-' + `
+                        $($tempContent.productName) + '-' + `
+                        $($tempContent.architecture) + '-' + `
+                        $tempGUID + `
+                        '.json'
         
-        $tempContent | Add-Member -NotePropertyName jobFileLocation -NotePropertyValue (-join ("/jobqueue/","$tempFileName")) -Force
+        $tempContent |  Add-Member -NotePropertyName jobFileLocation `
+                        -NotePropertyValue (-join ("/jobqueue/","$tempFileName")) `
+                        -Force
         
-        Write-Log -Message (-join ('Job Generated: ',"$($tempContent.productVendor)",' ',"$($tempContent.productName)",' ',"$($tempContent.architecture)")) `
-            -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
+        Write-Log   -Component "Job Manager" `
+                    -Type 1 `
+                    -LogFile $scriptLogFile `
+                    -Message (-join ('Job Generated: ',
+                    "$($tempContent.productVendor)",' ',
+                    "$($tempContent.productName)",' ',
+                    "$($tempContent.architecture)")) 
+            
         
         $tempContent | ConvertTo-Json | Out-File "$scriptDirectory/jobqueue/$tempFileName"
 
         if (Test-Path "$scriptDirectory/jobqueue/$tempFileName") 
         {
-            Write-Log -Message (-join ('Job Validated: ',"$($tempContent.productVendor)",' ',"$($tempContent.productName)",' ',"$($tempContent.architecture)")) `
-                -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
+            Write-Log   -Component "Job Manager" -Type 1 `
+                        -LogFile $scriptLogFile `
+                        -Message (-join ('Job Validated: ',
+                        "$($tempContent.productVendor)",' ',
+                        "$($tempContent.productName)",' ',
+                        "$($tempContent.architecture)"))                
             
-            Set-JSONProperty -Path "$scriptDirectory/jobqueue/$tempFileName" -NoteProperty lastModified -Value (Get-Date -Format o | ForEach-Object { $_ -replace ":", "." })
+            Set-JSONProperty    -Path "$scriptDirectory/jobqueue/$tempFileName" `
+                                -NoteProperty lastModified `
+                                -Value (Get-Date -Format o | `
+                                ForEach-Object { $_ -replace ":", "." })
         }
         else 
         {
-            Write-Log -Message (-join ('Job Creation Failed: ',"$($tempContent.productVendor)",' ',"$($tempContent.productName)",' ',"$($tempContent.architecture)")) `
-                -Component "Job Manager" -Type 3 -LogFile $scriptLogFile
+            Write-Log   -Component "Job Manager" `
+                        -Type 3 `
+                        -LogFile $scriptLogFile
+                        -Message (-join ('Job Creation Failed: ',
+                        "$($tempContent.productVendor)",' ',
+                        "$($tempContent.productName)",' ',
+                        "$($tempContent.architecture)"))
         }
 
         ##TODO - Validate that the job file was successfully created and log the results
@@ -341,410 +473,461 @@ foreach ($galleryCatalogEntry in $galleryCatalog)
     }
 }
 
-if ($StartToday -eq $false -or $StartToday -eq $null) 
-{
-    if ($(Get-PatchTuesday) -ge $(Get-Date))
-    {
-        $patchTuesdayOrToday = Get-PatchTuesday
-    }
-    else 
-    {
-        if ($(Get-Date).Month -ne '12'){
-            $patchTuesdayOrToday = Get-PatchTuesday -Month $($(Get-Date).AddMonths(1).Month) -Year $(Get-Date).Year
-        }
-        else
-        {
-            $patchTuesdayOrToday = Get-PatchTuesday -Month $($(Get-Date).AddMonths(1).Month) -Year $($(Get-Date).Year + 1)
-        }
-    
-    }
-}
-else 
-{
-    $patchTuesdayOrToday = Get-Date
-}
+##*===============================================
+##* Package Management
+##*===============================================
 
 foreach ($job in $jobHandler) 
 {
     ## Compare existing deployments to catalog entries, end those deployments if found and appropriate, and tag packages with a deletion date marker.
     if ($job.type -eq 'package')
     {
-        #Search the active Tanium deploy packages for a match on the productVendor, productName, and description parameters.
-        
-        $taniumActiveDeployPkg = $taniumDeployPackages | Where-Object {"$($job.productVendor)" -like "*$($_.productVendor)*" -and `
-            "$($_.productName)" -like "*$($job.productName)*" -and "$($_.description)" -notlike "*decommission*"}
-            
-        #Select the Active Deploy Package with the greatest productVersion attribute
-        
-        if ($taniumActiveDeployPkg.Count -ge 2) 
-        {
-            $taniumActiveDeployPkg = $taniumActiveDeployPkg | Sort-Object -Property productVersion -Descending -ErrorAction SilentlyContinue | Select-Object -First 1 -ErrorAction SilentlyContinue
-        }
-    
-        if ($null -eq $taniumActiveDeployPkg) 
-        {
-            $job.previousPackageID = "None Found"
-        }
-        else
-        {
-            if ($null -eq $job.previousPackageID)
-            {
-                $job.previousPackageID = "$($taniumActiveDeployPkg.id)"
-            }
-        }
+        Write-Log   -Component "DeploymentAutomationToolkit:PackageManagement" `
+                                -Type 1 `
+                                -LogFile $scriptLogFile `
+                                -Message (-join ('Processing job: ',
+                                "$($job.productVendor)",' ',
+                                "$($job.productName)",' ',
+                                "$($job.productVersion)",'',
+                                "$($job.architecture)"))
         
         if ($job.jobStatus -eq 'downloading' -and $job.source -eq 'deployGallery')
         {
-            ##*===============================================
-            ##* Tanium Deploy Gallery Import 
-            ##*===============================================
+            # TODO - Observe function for failure contingencies
 
-            $taniumCatalogPkg = $taniumDeployGalleryCatalog | Where-Object {"$($job.productVendor)" -like "*$($_.productVendor)*" `
-                -and $($_.productName) -like "*$($job.productName)*"}
-    
-            # Address the possibility that two catalog packages may match search criteria and leverage job architecture to eliminate the wrong catalog item.
-            
-            if ($($taniumCatalogPkg).count -ge 2) 
+            $latestPackage =    Get-LatestTaniumDeployPackage `
+                                    -Platform $job.platform `
+                                    -ProductVendor $job.productVendor `
+                                    -ProductName $job.productName `
+                                    -ScriptLogFile $scriptLogFile
+
+            if ($latestPackage.importRequired -eq $true)
             {
-                foreach ($package in $taniumCatalogPkg) 
-                {
-                    if ($package.productName -like "*$($Job.architecture)*") 
-                    {
-                        $taniumCatalogPkg = $package
-                        
-                        break
-                    }
-                    else 
-                    {
-                        $taniumCatalogPkg = $taniumCatalogPkg | Where-Object {$_.productName -notlike "*64*"}
-                    }
-                }
-
-                Remove-Variable package -ErrorAction SilentlyContinue
-
-            }
-
-            if ($null -eq $taniumActiveDeployPkg -or $taniumCatalogPkg.productVersion -gt $taniumActiveDeployPkg.productVersion) 
-            {
-                Write-Log -Message (-join ('Importing Package: ',"$($taniumCatalogPkg.productVendor)",' ',"$($taniumCatalogPkg.productName)",' ',`
-                    "$($taniumCatalogPkg.productVersion)",'',"$($taniumCatalogPkg.architecture)")) -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
+                Write-Log   -Component "DeploymentAutomationToolkit:PackageManagement" -Type 1 `
+                            -LogFile $scriptLogFile `
+                            -Message "Importing Package: $($latestPackage.name)"
                 
-                try
-                {
-                    $taniumImportPackage = Import-TaniumDeployGalleryPackage -ID $taniumCatalogPkg.id
-
-                    if ($null -ne $taniumImportPackage) 
-                    {
-                        
-                        $taniumImportPackage.description = "Imported by Deployment Automation Framework on $currentDate as part of Job $($job.guid)"
-                    
-                        $taniumImportPackage | Set-TaniumDeployPackage | Out-Null
-                        
-                        $job.packageID = $taniumImportPackage.id
-                        
-                        $job.currentVersion = $taniumImportPackage.productVersion
-
-                        Write-Log -Message (-join ('Successfully Imported: ',"$($taniumCatalogPkg.productVendor)",' ',"$($taniumCatalogPkg.productName)",' ',`
-                            "$($taniumCatalogPkg.productVersion)",'',"$($taniumCatalogPkg.architecture)")) -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
-                    
-                        $taniumImportPackage = Get-TaniumDeployPackage -ID $taniumImportPackage.id
-
-                        $job.currentSoftwarePackageEditId = $taniumImportPackage.currentSoftwarePackageEditId
-
-                        if ($taniumImportPackage.allFilesCachedOnTaniumServer -eq $false) 
-                        {
-                            $taniumPackageCacheLoop = 0
-
-                            do
-                            {
-                                if ($taniumPackageCacheLoop -lt 1) 
-                                {
-                                    Write-Log -Message (-join ('Validating Package Cache Status: ',"$($taniumCatalogPkg.productVendor)",' ',"$($taniumCatalogPkg.productName)",' ',`
-                                        "$($taniumCatalogPkg.productVersion)",'',"$($taniumCatalogPkg.architecture)")) -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
-                                }
-                                
-                                $taniumImportPackage = Get-TaniumDeployPackage -ID $taniumImportPackage.id
-                                
-                                Start-Sleep -Seconds 10
-                                
-                                $taniumPackageCacheLoop++
-                            }
-                            until ($taniumPackageCacheLoop -gt $job.packageCacheLoop -or $taniumImportPackage.allFilesCachedOnTaniumServer -eq $true)
-                                              
-                            if ($taniumImportPackage.allFilesCachedOnTaniumServer -eq $false) 
-                            {
-                            
-                                Write-Log -Message (-join ('Package Contents Failed to Cache: ',"$($taniumCatalogPkg.productVendor)",' ',"$($taniumCatalogPkg.productName)",' ',`
-                                    "$($taniumCatalogPkg.productVersion)",'',"$($taniumCatalogPkg.architecture)")) -Component "Job Manager" -Type 3 -LogFile $scriptLogFile
-                                
-                                $job | Add-Member -NotePropertyName jobStatus -NotePropertyValue ('hold') -Force
-                                                    
-                                if ($job.jobfilelocation -notmatch 'hold') 
-                                {
-                                    Write-Log -Message (-join ('Placing job in Hold directory: ',"$($taniumCatalogPkg.productVendor)",' ',"$($taniumCatalogPkg.productName)",' ',`
-                                        "$($taniumCatalogPkg.productVersion)",'',"$($taniumCatalogPkg.architecture)")) -Component "Job Manager" -Type 2 -LogFile $scriptLogFile
-                                    
-                                    Move-Item -Path (-join ($scriptDirectory, $($job.jobFileLocation))) -Destination "$scriptDirectory/jobqueue/hold" -Force
-                                    
-                                    $job | Add-Member -NotePropertyName jobFileLocation -NotePropertyValue ($job.jobFileLocation.Replace('downloading','hold')) -Force
-                                    
-                                    $job | ConvertTo-Json | Out-File (-join ($scriptDirectory, $($job.jobFileLocation))) -Force
-                                }
-                            }
-                            else 
-                            {
-                                Write-Log -Message (-join ('Package contents cached successfully: ',"$($taniumCatalogPkg.productVendor)",' ',"$($taniumCatalogPkg.productName)",' ',`
-                                    "$($taniumCatalogPkg.productVersion)",'',"$($taniumCatalogPkg.architecture)")) -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
-                                
-                                if ($job.jobStatus -notmatch 'deployment') 
-                                {
-                                    $job | Add-Member -NotePropertyName jobStatus -NotePropertyValue ('deployment') -Force
-                                    
-                                    Set-JSONProperty -Path $(-join ($scriptDirectory, $($job.jobFileLocation))) -NoteProperty "jobStatus" -Value 'deployment'
-
-                                    Write-Log -Message (-join ('Job status updated to - deployment: ',"$($taniumCatalogPkg.productVendor)",' ',"$($taniumCatalogPkg.productName)",' ',`
-                                        "$($taniumCatalogPkg.productVersion)",'',"$($taniumCatalogPkg.architecture)")) -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
-                                }
-                            }
-                        }
-
-                    }
-                }
-                catch [System.Net.WebException]
-                {    
-                    switch ($Error[0].ErrorDetails.Message) 
-                    {
-                        {$_ -like "*already exists*"} 
-                        {
-                            $errorMessage = $Error[0].ErrorDetails.Message | Out-String | ConvertFrom-Json
-                        
-                            Write-Log "$($($errorMessage.errors.description).replace('"',''))." -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
-                        
-                            $taniumImportPackage = Get-TaniumDeployPackage -ID $taniumCatalogPkg.importedAs
-                        
-                            Remove-Variable errorMessage
-                        }
-                        {$_ -like "*Unable to find Software Package*"} 
-                        {
-                            $errorMessage = $Error[0].ErrorDetails.Message | Out-String | ConvertFrom-Json
-                            
-                            Write-Log "$($($errorMessage.errors.description).replace('"',''))." -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
-                            
-                            Remove-Variable errorMessage
-                        }
-                        Default 
-                        {
-                            Write-Log "$($Error[0].ErrorDetails.Message)" -LogFile $scriptLogFile
-                        }
-                    }
-                }
-
+                $taniumImportPackage = Import-TaniumDeployGalleryPackage -ID $latestPackage.softwarePackageId
                 
-                
-                if ($QuickTest -eq $true){
-                    Write-Log -Message 'Beginning 5 second cooldown for package processing.' -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
-                    
-                    Start-Sleep -Seconds 5
+                if ($taniumImportPackage) {
+                    $taniumImportPackage.description    = "Imported by Deployment Automation Framework " + `
+                                                          "on $currentDate as part of Job $($job.guid)"
+
+                    $taniumImportPackage                = $taniumImportPackage | Set-TaniumDeployPackage
+
+                    $job.currentSoftwarePackageEditId   = $taniumImportPackage.currentSoftwarePackageEditId
+                    $job.currentVersion                 = $taniumImportPackage.productVersion
+                    $job.previousSoftwarePackageId      = $taniumImportPackage.previousSoftwarePackageId
+                    $job.previousVersion                = $latestPackage.previousVersion
+                    $job.softwarePackageId              = $taniumImportPackage.id
+
+                    $cacheValidationObject              =    Get-TaniumDeployPackageCacheStatus `
+                                                            -PackageCacheLoop $job.packageCacheLoop `
+                                                            -TaniumImportPackage $taniumImportPackage `
+                                                            -ScriptLogFile $scriptLogFile
                 }
                 else {
-                    Write-Log -Message 'Beginning 120 second cooldown for package processing.' -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
+                    Write-Log   -Component "DeploymentAutomationToolkit:PackageManagement" `
+                                -Type 2 -LogFile $scriptLogFile `
+                                -Message (-join ('Placing job in Hold directory: ',
+                                "$($cacheValidationObject.productVendor)",' ',
+                                "$($cacheValidationObject.productName)",' ',
+                                "$($cacheValidationObject.productVersion)",'',
+                                "$($cacheValidationObject.architecture)")) 
+                    
+                    $removePath = (-join ($scriptDirectory, $($job.jobFileLocation)))
+                    
+                    $job.currentSoftwarePackageEditId   = $latestPackage.currentSoftwarePackageEditId
+                    $job.currentVersion                 = $latestPackage.productVersion
+                    $job.holdReason                     = 'importFailure'
+                    $job.jobStatus                      = 'hold'
+                    $job.jobFileLocation                = $job.jobFileLocation.Replace('/jobqueue/','/jobqueue/hold/')
+                    $job.previousSoftwarePackageId      = $latestPackage.previousSoftwarePackageId
+                    $job.previousVersion                = $latestPackage.previousVersion
+                    $job.softwarePackageId              = $latestPackage.softwarePackageId
 
-                    Start-Sleep -Seconds 120
+                    $job | ConvertTo-Json | Out-File (-join ($scriptDirectory, $($job.jobFileLocation))) -Force
+                    
+                    $jobFailures.Add($job)
+
+                    if (Test-Path -Path (-join ($scriptDirectory, $($job.jobFileLocation)))) {
+                        Remove-Item -Path $removePath
+                    }
+                    
+                    break
                 }
 
-                
+                if ($cacheValidationObject.allFilesCachedOnTaniumServer -eq $true)
+                {
+                    Write-Log   -Component "DeploymentAutomationToolkit:PackageManagement" `
+                                -Type 1 `
+                                -LogFile $scriptLogFile `
+                                -Message (-join ('Job status updated to - deployment: ',
+                                "$($cacheValidationObject.productVendor)",' ',
+                                "$($cacheValidationObject.productName)",' ',
+                                "$($cacheValidationObject.productVersion)",'',
+                                "$($cacheValidationObject.architecture)"))
+                    
+                    $job | Add-Member -NotePropertyName jobStatus -NotePropertyValue ('deployment') -Force
+                        
+                    Set-JSONProperty -Path $(-join ($scriptDirectory, $($job.jobFileLocation))) -NoteProperty "jobStatus" -Value 'deployment'
+                }
+                else 
+                {
+                    Write-Log   -Component "DeploymentAutomationToolkit:PackageManagement" `
+                                -Type 2 -LogFile $scriptLogFile `
+                                -Message (-join ('Placing job in Hold directory: ',
+                                "$($cacheValidationObject.productVendor)",' ',
+                                "$($cacheValidationObject.productName)",' ',
+                                "$($cacheValidationObject.productVersion)",'',
+                                "$($cacheValidationObject.architecture)")) 
+                    
+                    Remove-Item -Path (-join ($scriptDirectory, $($job.jobFileLocation)))
+                    
+                    $job.currentSoftwarePackageEditId   = $latestPackage.currentSoftwarePackageEditId
+                    $job.currentVersion                 = $latestPackage.productVersion
+                    $job.holdReason                     = 'cacheFailure'
+                    $job.jobStatus                      = 'hold'
+                    $job.jobFileLocation                = $job.jobFileLocation.Replace('/jobqueue/','/jobqueue/hold/')
+                    $job.previousSoftwarePackageId      = $latestPackage.previousSoftwarePackageId
+                    $job.previousVersion                = $latestPackage.previousVersion
+                    $job.softwarePackageId              = $latestPackage.softwarePackageId
+
+                    $jobFailures.Add($job)
+
+                    $job | ConvertTo-Json | Out-File (-join ($scriptDirectory, $($job.jobFileLocation))) -Force
+                }
             }
-            else {
+            elseif ($latestPackage.importRequired -eq $false -and $latestPackage.contentCached -eq $true) 
+            {
+                Write-Log   -Component "DeploymentAutomationToolkit:PackageManagement" -Type 1 `
+                            -LogFile $scriptLogFile `
+                            -Message "Package already present with cached content: $($latestPackage.name)"
+                
+                Write-Log   -Component "DeploymentAutomationToolkit:PackageManagement" `
+                            -Type 1 `
+                            -LogFile $scriptLogFile `
+                            -Message (-join ( 'Job status updated to - deployment: ',"$($latestPackage.Name)"))
+
+                $job.currentSoftwarePackageEditId   = $latestPackage.currentSoftwarePackageEditId
+                $job.currentVersion                 = $latestPackage.productVersion
+                $job.jobStatus                      = 'deployment'
+                $job.previousSoftwarePackageId      = $latestPackage.previousSoftwarePackageId
+                $job.previousVersion                = $latestPackage.previousVersion
+                $job.softwarePackageId              = $latestPackage.softwarePackageId
+
+                $job | ConvertTo-Json | Out-File (-join ($scriptDirectory, $($job.jobFileLocation))) -Force
+            }
+            elseif ($latestPackage.importRequired -eq $false -and $latestPackage.contentCached -eq $false) 
+            {
+                Write-Log   -Component "DeploymentAutomationToolkit:PackageManagement" -Type 1 `
+                            -LogFile $scriptLogFile `
+                            -Message "Package already present but cache validation failed: $($latestPackage.name)"
+
+                Write-Log   -Component "DeploymentAutomationToolkit:PackageManagement" -Type 1 `
+                            -LogFile $scriptLogFile `
+                            -Message "Placing job in Hold directory: $($latestPackage.name)"
+                
+                Remove-Item -Path (-join ($scriptDirectory, $($job.jobFileLocation)))
+                    
+                $job.currentSoftwarePackageEditId   = $latestPackage.currentSoftwarePackageEditId
+                $job.currentVersion                 = $latestPackage.productVersion
+                $job.holdReason                     = 'cacheFailure'
+                $job.jobStatus                      = 'hold'
+                $job.jobFileLocation                = $job.jobFileLocation.Replace('/jobqueue/','/jobqueue/hold/')
+                $job.previousSoftwarePackageId      = $latestPackage.previousSoftwarePackageId
+                $job.previousVersion                = $latestPackage.previousVersion
+                $job.softwarePackageId              = $latestPackage.softwarePackageId
+
+                $jobFailures.Add($job)
+
+                $job | ConvertTo-Json | Out-File (-join ($scriptDirectory, $($job.jobFileLocation))) -Force
             }
         }
 
-        Clear-Variable -Name taniumActiveDeployPkg -ErrorAction SilentlyContinue
-        Clear-Variable -Name taniumCatalogPkg -ErrorAction SilentlyContinue
-
+        if ($cacheValidationObject) {Clear-Variable -Name cacheValidationObject}
+        if ($latestPackage) {Clear-Variable -Name latestPackage}
+        if ($taniumImportPackage) {Clear-Variable -Name taniumImportPackage}
     }
+}
+
+# Loop jobFailures array to clean up jobHandler prior to more processing
+
+foreach ($job in $jobFailures) {
+    $jobHandler.Remove($job)
+}
+
+Write-Log   -Component "DeploymentAutomationToolkit:PackageManagement" -Type 1 `
+            -LogFile $scriptLogFile `
+            -Message    "Updating Tanium Deploy Package catalog."
+
+[void]$(Update-TaniumDeployPackageCatalog)
+
+##*===============================================
+##* Time Management
+##*===============================================
+
+foreach ($job in $jobHandler) 
+{
+    Write-Log   -Component "DeploymentAutomationToolkit:TimeManagement" -Type 1 `
+                -LogFile $scriptLogFile `
+                -Message    ("Determining deployment Start and Stop Times: " + `
+                            $job.productVendor + ' ' + `
+                            $job.productName + ' ' + `
+                            $job.guid
+                            )
+     
+    $job = Get-StartAndEndDates -Job $job -ScriptLogFile $scriptLogFile -StartToday $StartToday
+
+    $job | ConvertTo-Json | Out-File (-join ($scriptDirectory, $($job.jobFileLocation))) -Force
 }
 
 ##*===============================================
 ##* Deployment Processing
 ##*===============================================
 
+# Validate deployment information
+
+foreach ($job in $jobHandler)
+{
+
+    [int]$ringCount = $($job | Get-Member | Where-Object {$_.name -like "ring*"}).count
+    [int]$ringLoop = 1
+    
+    do 
+    {
+        New-Variable -Name (-join ('ring',$ringLoop)) -Value $ringLoop -Force
+     
+        $activeRing =   Get-Variable -Name `
+                        (-join ('ring',$ringLoop)) | `
+                        Select-Object -ExpandProperty 'Name'
+
+        Write-Log   -Component "DeploymentAutomationToolkit:DeploymentProcessing" -Type 1 `
+                    -LogFile $scriptLogFile `
+                    -Message    ("Creating and validating deployment information for: " + `
+                                $job.productVendor + ' ' + `
+                                $job.productName + ' ' + `
+                                $job.guid + ' ' + `
+                                $activeRing
+                                )
+
+        $job = Confirm-DeploymentData -Job $job -ScriptLogFile $scriptLogFile
+
+        if ($false -eq $job.$activeRing.classValidated) 
+        {
+            Write-Log   -Component "DeploymentAutomationToolkit:DeploymentProcessing" `
+                                -Type 2 -LogFile $scriptLogFile `
+                                -Message (-join ('Placing job in Hold directory: ',
+                                "$($job.productVendor)",' ',
+                                "$($job.productName)",' ',
+                                "$($job.productVersion)",'',
+                                "$($job.architecture)")) 
+
+            Remove-Item -Path (-join ($scriptDirectory, $($job.jobFileLocation)))
+            
+            $job.jobStatus          = 'hold'
+            $job.holdReason         = 'classValidationFailure'
+            $job.jobFileLocation    = $job.jobFileLocation.Replace('/jobqueue/','/jobqueue/hold/')
+
+            $jobFailures.Add($job)
+
+            $job | ConvertTo-Json | Out-File (-join ($scriptDirectory, $($job.jobFileLocation))) -Force
+        }
+
+        $ringLoop++
+    } 
+    until ($ringLoop -gt $ringCount)
+    
+    $job | ConvertTo-Json | Out-File (-join ($scriptDirectory, $($job.jobFileLocation))) -Force
+
+    Remove-Variable ringCount
+    Remove-Variable ringLoop
+    
+}
+
+# Loop jobFailures array to clean up jobHandler prior to more processing
+
+foreach ($job in $jobFailures) {
+    $jobHandler.Remove($job)
+}
+
+# Deployment object creation and validation
+
 foreach ($job in $jobHandler) 
 {
-    if ($job.jobStatus -eq 'deployment')
-    {
-        ##*===============================================
-        ##* Tanium Deploy Gallery Deployment 
-        ##*===============================================				
-            
-        [int]$ringCount = $($job | Get-Member | Where-Object {$_.name -like "ring*"}).count
-        
-        [int]$ringLoop = 1
-
-        do 
-        {
-            New-Variable -Name (-join ('ring',$ringLoop)) -Value $ringLoop -Force
-        
-            $activeRing = Get-Variable -Name (-join ('ring',$ringLoop)) | Select-Object -ExpandProperty 'Name'
-        
-            $deploymentTarget = $taniumComputerGroups | Where-Object {$_.name -match "$($job.$activeRing.targetCriteria)"}
-
-            switch ($job.type) 
-            {
-                package 
-                {
-                    if ($null -eq $job.$activeRing.deployedOn) 
-                    {
-                        $startDate = $currentDate
-                        $startTime = '21:00'
-
-                        Write-Log -Message (-join ('Creating Deployment For: ',"$($job.productVendor)",' ',"$($job.productName)",' ',`
-                            "$($job.productVersion)",'',"$($job.architecture)"," $($job.guid) ",$activeRing)) -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
-                    
-                        if ($null -ne $job.$activeRing.startDateOffsetInDays -or $job.$activeRing.deploymentStartTime -ne '21:00') 
-                        {
-                            if ($null -ne $job.$activeRing.startDateOffsetInDays) 
-                            {
-                                $startDate = $($patchTuesdayOrToday).AddDays($job.$activeRing.startDateOffsetInDays).ToString("yyyy-MM-dd")
-                            }
-                            
-                            if ($job.$activeRing.deploymentStartTime -ne '21:00') 
-                            {
-                                $startTime = $job.$activeRing.deploymentStartTime
-                            }
-                        }
-
-                        if ($job.$activeRing.type -eq 'single')
-                        {
-                            $stopDate = $($patchTuesdayOrToday).AddDays($($job.$activeRing.startDateOffsetInDays) + ($job.$activeRing.deploymentLengthInDays)).ToString("yyyy-MM-dd")
-                            $stopTime = $job.$activeRing.deploymentStopTime
-                        }
-
-                        $startString = -join ("$startDate",'T',"$startTime",':00.000Z')
-
-                        $stopString = -join ("$stopDate",'T',"$stopTime",':00.000Z')
-
-                        $deploymentData = @{
-                            description = "Created by Deployment Automation Framework on $currentDate as part of Job $($job.guid)";
-                            deployedObjectEditId = $job.currentSoftwarePackageEditId;
-                            downloadImmediately = "$($job.$activeRing.downloadImmediately)";
-                            endTime = "$stopString";
-                            eussAvailableBeforeStart = "$($job.$activeRing.eussAvailableBeforeStart)";
-                            name = -join ("PSDAT - ","$($job.productVendor)",' ',"$($job.productName)",' ',"$($job.currentVersion)",' ',"to $($deploymentTarget.name)",' - ',$job.guid);
-                            overrideMaintenanceWindows = "$($job.$activeRing.overrideMaintenanceWindows)";
-                            operation = "$($job.$activeRing.operation)";
-                            restart = "$($job.$activeRing.restart)";
-                            startTime = "$startString";       
-                            softwarePackageId = "$($job.packageid)";
-                            target= @{
-                                computerGroupIds= @($($deploymentTarget.id));
-                                questionGroupIds= @();
-                            };
-                            type= "$($job.$activeRing.type)";
-                            useTaniumClientTimeZone = 'true';
-                        }
-
-                        try
-                        {
-                            $deployment = New-TaniumDeployDeployment -Data $deploymentData
-                        }
-                        catch [System.Net.WebException]
-                        {    
-                            switch ($Error[0]) 
-                            {
-                                {$_ -like "*invalid*target*"} 
-                                {
-                                    Write-Log -Message "The targeting criteria was invalid." -Component "Job Manager" -Type 3 -LogFile $scriptLogFile
-                                }
-                                {$_ -like "*software*packages*distributed*"} 
-                                {
-                                    Write-Log -Message "The defined package ($($deploymentData.softwarePackageId)) does not exist or has not been distributed." -Component "Job Manager" -Type 3 -LogFile $scriptLogFile
-                                }
-                                Default 
-                                {
-                                    Write-Log -Message "$($Error[0])" -Component "Job Manager" -Type 3 -LogFile $scriptLogFile
-                                }
-                            }
-                        }
-                        catch [System.Exception]
-                        {
-                            Write-Host "Other exception"
-                        }                                                            
-                        
-                        if ($deployment.statusLabel -eq 'Active' -or $deployment.statusLabel -eq 'Scheduled') 
-                        {
-                            $job.$activeRing | Add-Member -NotePropertyName deployedOn -NotePropertyValue $deployment.createdAt -Force
-                        
-                            $job.$activeRing | Add-Member -NotePropertyName lastStatus -NotePropertyValue $deployment.statusLabel -Force
-                        
-                            $job.$activeRing | Add-Member -NotePropertyName deploymentID -NotePropertyValue $deployment.id -Force
-                        
-                            $job | Add-Member -NotePropertyName jobStatus -NotePropertyValue 'complete' -Force
-                        
-                            $job | ConvertTo-Json | Out-File "$scriptDirectory/$($job.jobFileLocation)" -Force
-                        
-                            Write-Log -Message (-join ('Deployment Successfully Created: ',"$($job.productVendor)",' ',"$($job.productName)",' ',`
-                                "$($job.productVersion)",'',"$($job.architecture)"," $($job.guid) ",$activeRing)) -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
-                        
-                            if ($activeRing -like "*$ringCount*" -and $null -ne $($job.$activeRing.deployedOn)) 
-                            {
-                                $job | Add-Member -NotePropertyName allRingsDeployed -NotePropertyValue 'true' -Force
-                            
-                                $job | ConvertTo-Json | Out-File "$scriptDirectory/$($job.jobFileLocation)" -Force
-                                    
-                                if ($DecommOnCompletion -eq $true)
-                                {
-                                    Set-JSONProperty -Path $(-join ($scriptDirectory, $($job.jobFileLocation))) -NoteProperty "jobFileLocation" -Value "$scriptDirectory/jobqueue/decommissioned"
-                                    
-                                    Start-Sleep -Seconds 3
-
-                                    Move-Item -Path (-join ($scriptDirectory, $($job.jobFileLocation))) -Destination "$scriptDirectory/jobqueue/decommissioned" -Force
-                                }
-                                
-
-                            }
-                        }
-                        
-                        if ($Notify -eq $true){
- 
-                            Write-Log -Message 'Adding job to deployment array for email notification.' -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
-                        
-                        }
-                        
-                        if ($QuickTest -eq $true){
-                            Write-Log -Message 'Beginning 5 second cooldown for deployment processing.' -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
-                            
-                            Start-Sleep -Seconds 5
-                        }
-                        else {
-                            Write-Log -Message 'Beginning 120 second cooldown for deployment processing.' -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
-        
-                            Start-Sleep -Seconds 120
-                        }
-                    }  
-                    else 
-                    {
-                        Write-Log -Message (-join ('Ongoing Deployment Detected: ',"$($job.productVendor)",' ',"$($job.productName)",' ',`
-                                "$($job.productVersion)",'',"$($job.architecture)"," $($job.guid) ",$activeRing)) -Component "Job Manager" -Type 1 -LogFile $scriptLogFile
-                    }              
-
-                    Clear-Variable -Name activeRing -ErrorAction SilentlyContinue
-                    Clear-Variable -Name deployment -ErrorAction SilentlyContinue
-                    Clear-Variable -Name deploymentData -ErrorAction SilentlyContinue
-                    Clear-Variable -Name jobFileName -ErrorAction SilentlyContinue
-                    Clear-Variable -Name taniumCatalogPkg -ErrorAction SilentlyContinue
-                    Clear-Variable -Name taniumImportPackage -ErrorAction SilentlyContinue
-                }
-                update 
-                {
-                    #0.0.2
-                }
-            }
-                            
-            $ringLoop++
-        }
-        until ($ringLoop -gt $ringCount)
+    [hashtable]$ringHashTable   = @{}
+    [int]$ringCount             = $( $job | Get-Member | Where-Object { $_.name -like "ring*" } ).count
+    [int]$ringLoop              = 1
     
-        Clear-Variable ringCount
-        Clear-Variable ringLoop
+    do 
+    {
+        $activeRing = 'ring' + $ringLoop
+
+        if ($job.type -eq 'package' -and $null -eq $job.$activeRing.deployedOn) 
+        {
+            Write-Log   -Component "DeploymentAutomationToolkit:DeploymentProcessing" -Type 1 `
+                        -LogFile $scriptLogFile `
+                        -Message    ("Creating deployment for: " + `
+                                    $job.productVendor + ' ' + `
+                                    $job.productName + ' ' + `
+                                    $job.guid + ' ' + `
+                                    $activeRing
+                                    )
+
+            if ($job.$activeRing.classValidated -eq $true) 
+            {
+                Submit-TaniumDeployPackageDeployment    -Data $job.$activeRing.deploymentData `
+                                                        -OutVariable deploymentOutcome `
+                                                        -ScriptLogFile $ScriptLogFile | `
+                                                        Out-Null
+            }
+            else 
+            {
+                Write-Log   -Component "DeploymentAutomationToolkit:DeploymentProcessing" -Type 1 `
+                            -LogFile $scriptLogFile `
+                            -Message    ("Deployment data did not pass class validation: " + `
+                                        $job.productVendor + ' ' + `
+                                        $job.productName + ' ' + `
+                                        $job.guid + ' ' + `
+                                        $activeRing
+                                        )
+
+                break
+            }
+
+            if ($deploymentOutcome.deploymentObject.statusLabel -eq 'Active' -or `
+                $deploymentOutcome.deploymentObject.statusLabel -eq 'Scheduled') 
+            {
+
+                $job.$activeRing.deployedOn     = $deploymentOutcome.deploymentObject.createdAt
+                $job.$activeRing.deploymentID   = $deploymentOutcome.deploymentObject.id
+                
+                $job | ConvertTo-Json | Out-File (-join ($scriptDirectory, $($job.jobFileLocation))) -Force
+
+            }
+        }
+        elseif ($job.type -eq 'package' -and $null -ne $job.$activeRing.deployedOn) 
+        {
+            Write-Log   -Component "DeploymentAutomationToolkit:DeploymentProcessing" -Type 1 `
+                        -LogFile $scriptLogFile `
+                        -Message    ("This ring has already been deployed. Skipping over: " + `
+                                    $job.productVendor + ' ' + `
+                                    $job.productName + ' ' + `
+                                    $job.guid + ' ' + `
+                                    $activeRing
+                                    )
+        }
+
+        if ($QuickTest -eq $true -and $ringLoop -ne $ringCount)
+        {
+            Write-Log   -Component "DeploymentAutomationToolkit:DeploymentProcessing" `
+                        -Type 1 `
+                        -LogFile $scriptLogFile `
+                        -Message 'Beginning 5 second cooldown for deployment processing.'
+
+            Start-Sleep -Seconds 5
+        }
+        elseif ($ringLoop -ne $ringCount) 
+        {
+            Write-Log   -Component "DeploymentAutomationToolkit:DeploymentProcessing" `
+                        -Type 1 `
+                        -LogFile $scriptLogFile `
+                        -Message 'Beginning 30 second cooldown for deployment processing.' 
+
+            Start-Sleep -Seconds 30
+        }
+
+        $ringLoop++
+    }    
+    until ($ringLoop -gt $ringCount)
+    
+    # Loop through rings to determine ring completion statuses
+
+    $ringLoop = 1
+
+    do 
+    {
+        $activeRing = 'ring' + $ringLoop
+        
+        if ($job.$activeRing.deployedOn) {
+            $ringHashTable.Add("$activeRing",'complete')
+        }
+        else {
+            $ringHashTable.Add("$activeRing",'incomplete')
+        }
+
+        $ringLoop++
+    }
+    until ($ringLoop -gt $ringCount)
+
+    if ($ringHashTable.Values -notcontains 'incomplete') 
+    {
+        Write-Log   -Component "DeploymentAutomationToolkit:DeploymentProcessing" `
+                    -Type 1 `
+                    -LogFile $scriptLogFile `
+                    -Message    ("All rings deployed for: " + `
+                                $job.productVendor + ' ' + `
+                                $job.productName + ' ' + `
+                                $job.guid
+                                )
+
+        $job.allRingsDeployed = $true
+    }
+    else 
+    {
+        Write-Log   -Component "DeploymentAutomationToolkit:DeploymentProcessing" `
+                    -Type 1 `
+                    -LogFile $scriptLogFile `
+                    -Message    ("One or more rings not deployed for: " + `
+                                $job.productVendor + ' ' + `
+                                $job.productName + ' ' + `
+                                $job.guid
+                                )
+        
+        $job.allRingsDeployed = $false
+    }
+
+    $job | ConvertTo-Json | Out-File (-join ($scriptDirectory, $($job.jobFileLocation))) -Force
+
+    Remove-Variable ringCount
+    Remove-Variable ringHashTable
+    Remove-Variable ringLoop
+    
+}
+
+##*===============================================
+##* Post-Deployment Notification & Closure
+##*===============================================
+
+# Validate deployment information
+
+if ($jobFailures){
+    foreach ($job in $jobFailures) {
+        Export-Csv -InputObject $job -Path $scriptDirectory\logs\jobfailures.csv -NoTypeInformation -Append 
+    }
+}
+
+if ($DecommOnCompletion){
+    foreach ($job in $jobHandler) {
+        if ($job.allRingsDeployed) {
+            Write-Log   -Component "DeploymentAutomationToolkit:PackageManagement" `
+                        -Type 2 -LogFile $scriptLogFile `
+                        -Message (-join ('All rings deployed. Placing job in Decommissioned directory: ',
+                                "$($job.productVendor)",' ',
+                                "$($job.productName)",' ',
+                                "$($job.productVersion)",'',
+                                "$($job.architecture)")) 
+            
+            $removePath             = (-join ($scriptDirectory, $($job.jobFileLocation)))
+            $job.holdReason         = 'notApplicable'
+            $job.jobStatus          = 'complete'
+            $job.jobFileLocation    = $job.jobFileLocation.Replace('/jobqueue/','/jobqueue/decommissioned/')
+
+            $job | ConvertTo-Json | Out-File (-join ($scriptDirectory, $($job.jobFileLocation))) -Force
+
+            if (Test-Path -Path (-join ($scriptDirectory, $($job.jobFileLocation)))) {
+                Remove-Item -Path $removePath
+            }
+        }
     }
 }

@@ -1,0 +1,25 @@
+{
+	"instructions":				"Configure entries below as appropriate and then save this file in the same directory as config.json",
+	"envConfig": {
+		"altEnvironment": {
+			"taniumServer":		"https://tanium.lab.local",
+			"taniumUser":		"yourTaniumUser",
+			"taniumCredPath":	"core/config/taniumAltCred.txt"	
+		},
+		"devEnvironment": {
+			"taniumServer":		"https://yourtaniumserver.lab.local",
+			"taniumUser":		"yourTaniumUser",
+			"taniumCredPath":	"core/config/taniumDevCred.txt"
+		},
+		"prodEnvironment": {
+			"taniumServer":		"https://yourtaniumserver.lab.local",
+			"taniumUser":		"yourTaniumUser",
+			"taniumCredPath":	"core/config/taniumProdCred.txt"
+		},
+		"qaEnvironment": {
+			"taniumServer":		"https://yourtaniumserver.lab.local",
+			"taniumUser":		"yourTaniumUser",
+			"taniumCredPath":	"core/config/taniumQACred.txt"	
+		}
+	}
+}

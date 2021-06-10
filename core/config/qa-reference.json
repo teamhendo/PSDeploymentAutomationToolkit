@@ -1,6 +1,0 @@
-{
-	"taniumServer":"https://yourtaniumserver.lab.local",
-	"taniumAPIKey":"undefined",
-	"taniumUser":"undefined",
-	"taniumCredPath":"core/config/taniumQACred.txt"	
-}
