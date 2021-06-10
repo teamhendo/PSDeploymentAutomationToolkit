@@ -57,10 +57,10 @@ param (
                               -Type 1 `
                               -LogFile $scriptLogFile `
                               -Message (-join ( 'Successfully Imported: ',
-                              "$($cacheValidationObject.productVendor)",' ',
-                              "$($cacheValidationObject.productName)",' ',
-                              "$($cacheValidationObject.productVersion)",'',
-                              "$($cacheValidationObject.architecture)"))
+                              "$($taniumImportPackage.productVendor)",' ',
+                              "$($taniumImportPackage.productName)",' ',
+                              "$($taniumImportPackage.productVersion)",'',
+                              "$($taniumImportPackage.architecture)"))
                }
                else {
                     Write-Log -Component "Get-TaniumDeployPackageCacheStatus" `
@@ -76,10 +76,10 @@ param (
                               -Type 1 `
                               -LogFile $scriptLogFile `
                               -Message (-join ( 'Import Failure: ',
-                              "$($cacheValidationObject.productVendor)",' ',
-                              "$($cacheValidationObject.productName)",' ',
-                              "$($cacheValidationObject.productVersion)",'',
-                              "$($cacheValidationObject.architecture)"))
+                              "$($taniumImportPackage.productVendor)",' ',
+                              "$($taniumImportPackage.productName)",' ',
+                              "$($taniumImportPackage.productVersion)",'',
+                              "$($taniumImportPackage.architecture)"))
                }
           }
           catch [System.Net.WebException]

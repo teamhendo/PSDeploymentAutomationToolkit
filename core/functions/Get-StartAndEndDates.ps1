@@ -12,6 +12,7 @@ function Get-StartAndEndDates {
           [Parameter(Mandatory=$false, 
 		ValueFromPipeline=$true)]
 		[ValidateNotNull()]
+          [ValidateSet("true","false")]
 		$StartToday
 	)
     
@@ -21,7 +22,7 @@ function Get-StartAndEndDates {
      }
 
      Process {
-          if ($StartToday -eq $false -or $null -eq $StartToday) {
+          if ($StartToday -eq $false) {
                $patchTuesdayOrToday = Get-PatchTuesday
           }
           else 
@@ -48,14 +49,14 @@ function Get-StartAndEndDates {
                                              {$job.$activeRing.deploymentStartTime}`
                                         else {'21:00'}
                                       )
-                         $stopDate  = $($patchTuesdayOrToday).AddDays($($job.$activeRing.startDateOffsetInDays) + `
+                         $endDate  = $($patchTuesdayOrToday).AddDays($($job.$activeRing.startDateOffsetInDays) + `
                                              ($job.$activeRing.deploymentLengthInDays)).ToString("yyyy-MM-dd")
                          
-                         $stopTime  = $job.$activeRing.deploymentStopTime
+                         $endTime  = $job.$activeRing.deploymentEndTime
                          
                          $job.$activeRing.deploymentStartTimeString = -join ("$startDate",'T',"$startTime",':00.000Z')
                          
-                         $job.$activeRing.deploymentStopTimeString = -join ("$stopDate",'T',"$stopTime",':00.000Z')
+                         $job.$activeRing.deploymentEndTimeString = -join ("$endDate",'T',"$endTime",':00.000Z')
                     }
                     'ongoing'{
                          $startDate = $($patchTuesdayOrToday).AddDays($job.$activeRing.startDateOffsetInDays).ToString("yyyy-MM-dd")

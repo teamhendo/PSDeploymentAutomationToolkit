@@ -51,8 +51,8 @@ function Get-LatestTaniumDeployPackage {
                          currentSoftwarePackageEditId = $comparisonPackage.currentSoftwarePackageEditId
                          importRequired               = $false
                          name                         = "$($comparisonPackage.productVendor) $($comparisonPackage.productName) $($comparisonPackage.productVersion)"
-                         previousSoftwarePackageId    = $previousPackage.id
-                         previousVersion              = $previousPackage.productVersion
+                         previousSoftwarePackageId    = $(if ($previousPackage) {$previousPackage.id} else {'None Found'})  
+                         previousVersion              = $(if ($previousPackage) {$previousPackage.productVersion} else {'None Found'})
                          productVersion               = $comparisonPackage.productVersion
                          softwarePackageId            = $comparisonPackage.id
                     }
@@ -76,8 +76,8 @@ function Get-LatestTaniumDeployPackage {
                     currentSoftwarePackageEditId = $comparisonPackage.currentSoftwarePackageEditId
                     importRequired               = $false
                     name                         = "$($comparisonPackage.productVendor) $($comparisonPackage.productName) $($comparisonPackage.productVersion)"
-                    previousSoftwarePackageId    = $previousPackage.id
-                    previousVersion              = $previousPackage.productVersion
+                    previousSoftwarePackageId    = $(if ($previousPackage) {$previousPackage.id} else {'None Found'})  
+                    previousVersion              = $(if ($previousPackage) {$previousPackage.productVersion} else {'None Found'})
                     productVersion               = $comparisonPackage.productVersion
                     softwarePackageId            = $comparisonPackage.id
                }

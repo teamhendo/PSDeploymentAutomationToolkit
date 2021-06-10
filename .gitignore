@@ -2,9 +2,12 @@ _discard
 _ignore*
 .vscode
 core/config/alt-reference.json
+core/config/config.json
+core/functions/Set-NewVMCheckpoint.ps1
 core/functions/Restore-TaniumTestLab.ps1
+core/functions/Send-HTMLEmail.ps1
 jobqueue/decommissioned/*.json
-logs/deploymentautomation.log
-*.txt
+logs/deploymentautomation.lo*
+*Cred.txt
 *.log
 *-*-*-*-*-*.json
