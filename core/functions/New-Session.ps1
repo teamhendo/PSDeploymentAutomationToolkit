@@ -4,7 +4,7 @@ function New-Session {
         [Parameter(Mandatory=$true, 
         ValueFromPipeline=$true)]
         [ValidateNotNullOrEmpty()]
-        $CredentialObject,
+        [System.Management.Automation.PSCredential]$CredentialObject,
         [Parameter(Mandatory=$true, 
         ValueFromPipeline=$true)]
         [ValidateNotNullOrEmpty()]
@@ -15,9 +15,6 @@ function New-Session {
         $ScriptDirectory
         
     )
-
-    #Requires -Modules TanREST
-    #Requires -Version 3.0
     
     Begin {
         Write-Log   -Component "New-Session" `
@@ -55,7 +52,6 @@ function New-Session {
                                 -Message 'Tanium API session created with -DisableCertificateValidation flag.' 
                 }
             }
-            
         }
         catch 
         {
@@ -63,7 +59,7 @@ function New-Session {
             
             Write-Log   -Component "New-Session" `
                         -Type 3 `
-                        -LogFile $scriptLogFile
+                        -LogFile $scriptLogFile `
                         -Message "(-join ('Tanium API could not be created: ',"$errorMessage"))" 
             
             exit

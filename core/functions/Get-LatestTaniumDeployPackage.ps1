@@ -25,9 +25,9 @@ function Get-LatestTaniumDeployPackage {
                                    $_.productVendor -eq $ProductVendor -and 
                                    $_.productName -eq $ProductName -and 
                                    $_.platform -eq $Platform} | 
-                                   Tee-Object -Variable previousPackage |
-                                   Sort-Object -Property productVersion -Descending | 
-                                   Select-Object -First 1
+                                   Sort-Object -Property productVersion | 
+                                   Select-Object -First 1 |
+                                   Tee-Object -Variable previousPackage
 
           $latestGalleryPackage =  $taniumDeployGalleryCatalog | 
                                    Where-Object { 
@@ -36,16 +36,12 @@ function Get-LatestTaniumDeployPackage {
                                    $_.platform -eq $Platform} | 
                                    Sort-Object -Property productVersion -Descending | 
                                    Select-Object -First 1
-                                   
-          $previousPackage =       $previousPackage | 
-                                   Sort-Object -Property productVersion -Descending |
-                                   Select-Object -Skip 1 |
-                                   Select-Object -First 1                                   
+                                         
      }
 
      Process {
-          if ($comparisonPackage.productVersion -ne $latestGalleryPackage.productVersion) {
-               if ($comparisonPackage.productVersion -gt $latestGalleryPackage.productVersion) {
+          if ([version]($comparisonPackage.productVersion) -ne [version]($latestGalleryPackage.productVersion)) {
+               if ([version]($comparisonPackage.productVersion) -gt [version]($latestGalleryPackage.productVersion)) {
                     $latestPackage = [PSCustomObject]@{
                          contentCached                = $comparisonPackage.allFilesCachedOnTaniumServer
                          currentSoftwarePackageEditId = $comparisonPackage.currentSoftwarePackageEditId

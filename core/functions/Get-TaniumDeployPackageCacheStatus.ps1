@@ -87,7 +87,7 @@ param (
                switch ($Error[0].ErrorDetails.Message) 
                {
                     {$_ -like "*already exists*"} {
-                         $errorMessage = $Error[0].ErrorDetails.Message | Out-String | ConvertFrom-Json
+                         $errorMessage = $Error[0].ErrorDetails.Message | Out-String | ConvertFrom-Json -Depth 100
 
                          Write-Log -Component "Get-TaniumDeployPackageCacheStatus" `
                                    -LogFile ($scriptLogFile) `

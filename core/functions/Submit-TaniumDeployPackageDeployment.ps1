@@ -16,7 +16,7 @@ function Submit-TaniumDeployPackageDeployment {
     #Requires -Version 5.0
 
      Begin {
-          $deploymentOutcome = [PSCustomObject]@{
+               $deploymentOutcome       = [PSCustomObject]@{
                successfulDeployment     = $null
                deploymentObject         = $null
           }
